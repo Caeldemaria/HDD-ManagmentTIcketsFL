@@ -1,56 +1,104 @@
+// server.js
 import express from "express";
-import cors from "cors";
 import bodyParser from "body-parser";
-import { db } from "./firebase.js";
+import cors from "cors";
+import admin from "firebase-admin";
 
 const app = express();
-const PORT = 3000;
+const port = process.env.PORT || 8080;
 
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
 
-// ✅ Rota para receber tickets e salvar no Firebase
-app.post("/api/tickets", async (req, res) => {
+// Inicializa Firebase usando variável de ambiente
+if (!process.env.FIREBASE_KEY) {
+  console.error("❌ ERRO: FIREBASE_KEY não configurada nas variáveis de ambiente!");
+  process.exit(1);
+}
+
+const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+}
+
+const db = admin.firestore();
+
+// ✅ Endpoint: /receive/Ticket
+app.post("/receive/Ticket", async (req, res) => {
+  const { Ticket } = req.body;
+
+  if (!Ticket) {
+    return res.status(400).json({ message: "Formato inválido: faltando Ticket" });
+  }
+
   try {
-    const ticket = req.body;
-
-    if (!ticket.TicketNumber) {
-      return res.status(400).json({ error: "TicketNumber is required" });
-    }
-
-    await db.collection("tickets").doc(ticket.TicketNumber).set(ticket);
-    res.status(201).json({ message: "Ticket saved successfully" });
+    await db.collection("tickets").add(Ticket);
+    console.log("📨 Ticket recebido e salvo:", Ticket.TicketNumber);
+    res.status(200).json({ message: "Ticket recebido com sucesso" });
   } catch (error) {
-    console.error("Error saving ticket:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error("❌ Erro ao salvar Ticket:", error);
+    res.status(500).json({ message: "Erro ao salvar Ticket" });
   }
 });
 
-// ✅ Rota para listar todos os tickets
-app.get("/api/tickets", async (req, res) => {
+// ✅ Endpoint: /receive/Message
+app.post("/receive/Message", async (req, res) => {
+  const { Message } = req.body;
+
+  if (!Message) {
+    return res.status(400).json({ message: "Formato inválido: faltando Message" });
+  }
+
   try {
-    const snapshot = await db.collection("tickets").get();
-    const tickets = snapshot.docs.map((doc) => doc.data());
-    res.json(tickets);
+    await db.collection("messages").add(Message);
+    console.log("📨 Mensagem recebida e salva:", Message.id);
+    res.status(200).json({ message: "Message recebido com sucesso" });
   } catch (error) {
-    console.error("Error listing tickets:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error("❌ Erro ao salvar Message:", error);
+    res.status(500).json({ message: "Erro ao salvar Message" });
   }
 });
 
-// ✅ Rota para buscar um ticket pelo ID
-app.get("/api/tickets/:id", async (req, res) => {
+// ✅ Endpoint: /receive/EODAudit
+app.post("/receive/EODAudit", async (req, res) => {
+  const { EODAudit } = req.body;
+
+  if (!EODAudit) {
+    return res.status(400).json({ message: "Formato inválido: faltando EODAudit" });
+  }
+
   try {
-    const doc = await db.collection("tickets").doc(req.params.id).get();
-    if (!doc.exists) {
-      return res.status(404).json({ error: "Ticket not found" });
-    }
-    res.json(doc.data());
+    await db.collection("audits").add(EODAudit);
+    console.log("📨 EODAudit recebido e salvo:", EODAudit.id);
+    res.status(200).json({ message: "EODAudit recebido com sucesso" });
   } catch (error) {
-    console.error("Error getting ticket:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error("❌ Erro ao salvar EODAudit:", error);
+    res.status(500).json({ message: "Erro ao salvar EODAudit" });
   }
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// ✅ Endpoint: /receive/Response
+app.post("/receive/Response", async (req, res) => {
+  const { Response } = req.body;
+
+  if (!Response) {
+    return res.status(400).json({ message: "Formato inválido: faltando Response" });
+  }
+
+  try {
+    await db.collection("responses").add(Response);
+    console.log("📨 Response recebido e salvo:", Response.id);
+    res.status(200).json({ message: "Response recebido com sucesso" });
+  } catch (error) {
+    console.error("❌ Erro ao salvar Response:", error);
+    res.status(500).json({ message: "Erro ao salvar Response" });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`🚀 Servidor rodando na porta ${port}`);
+});
