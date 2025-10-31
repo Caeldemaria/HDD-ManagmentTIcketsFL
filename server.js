@@ -98,7 +98,7 @@ app.post("/receive/Response", async (req, res) => {
     res.status(500).json({ message: "Erro ao salvar Response" });
   }
 });
-app.get("/api/tickets", (req, res) => {
+app.get("/tickets", (req, res) => {
   res.json([
     { TicketNumber: "123", Status: "Open", RequestType: "Locate", Date: "2025-10-31" }
   ]);
