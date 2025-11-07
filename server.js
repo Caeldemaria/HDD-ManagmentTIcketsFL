@@ -90,7 +90,11 @@ app.post("/receive/Response", async (req, res) => {
   }
 
   try {
-    await db.collection("responses").add(Response);
+    await db
+  .collection("tickets")
+  .doc(Response.TicketNumber)
+  .collection("responses")
+  .add(Response);
     console.log("📨 Response recebido e salvo:", Response.id);
     res.status(200).json({ message: "Response recebido com sucesso" });
   } catch (error) {
