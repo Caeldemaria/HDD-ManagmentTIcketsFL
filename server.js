@@ -82,26 +82,43 @@ app.post("/receive/EODAudit", async (req, res) => {
 });
 
 // ✅ Endpoint: /receive/Response
+// ✅ Endpoint: /receive/Response
 app.post("/receive/Response", async (req, res) => {
-  const { Response } = req.body;
-
-  if (!Response) {
-    return res.status(400).json({ message: "Formato inválido: faltando Response" });
-  }
-
   try {
-    await db
-  .collection("tickets")
-  .doc(Response.TicketNumber)
-  .collection("responses")
-  .add(Response);
-    console.log("📨 Response recebido e salvo:", Response.id);
-    res.status(200).json({ message: "Response recebido com sucesso" });
+    const { Response } = req.body;
+
+    if (!Response || !Response.TicketNumber) {
+      return res.status(400).json({ message: "Formato inválido: faltando Response ou TicketNumber" });
+    }
+
+    // 🔹 Cria referência ao ticket
+    const ticketRef = db.collection("tickets").doc(Response.TicketNumber);
+
+    // 🔹 Adiciona o response como subdocumento
+    const newResponseRef = await ticketRef.collection("responses").add(Response);
+
+    console.log(`📨 Response recebido e salvo para ticket ${Response.TicketNumber}, ID do response: ${newResponseRef.id}`);
+
+    // ✅ Atualiza status do ticket se todos responses forem "Clear" (1, 4, 5)
+    const responsesSnap = await ticketRef.collection("responses").get();
+    const allResponses = responsesSnap.docs.map(doc => doc.data());
+
+    const clearCodes = ["1", "4", "5"];
+    const allClear = allResponses.length > 0 && allResponses.every(r => clearCodes.includes(r.ResponseCode));
+
+    if (allClear) {
+      await ticketRef.set({ status: "Clear" }, { merge: true });
+      console.log(`✅ Ticket ${Response.TicketNumber} marcado como "Clear"`);
+    }
+
+    return res.status(200).json({ message: "Response recebido com sucesso" });
+
   } catch (error) {
     console.error("❌ Erro ao salvar Response:", error);
-    res.status(500).json({ message: "Erro ao salvar Response" });
+    return res.status(500).json({ message: "Erro interno ao salvar Response" });
   }
 });
+
 app.get("/tickets", (req, res) => {
   res.json([
     { TicketNumber: "123", Status: "Open", RequestType: "Locate", Date: "2025-10-31" }
