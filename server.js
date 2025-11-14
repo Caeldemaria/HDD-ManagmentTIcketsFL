@@ -1,3 +1,32 @@
+// server.js
+import express from "express";
+import bodyParser from "body-parser";
+import cors from "cors";
+import admin from "firebase-admin";
+
+const app = express();
+const port = process.env.PORT || 8080;
+
+// Middleware
+app.use(cors());
+app.use(bodyParser.json());
+
+// Inicializa Firebase usando variável de ambiente
+if (!process.env.FIREBASE_KEY) {
+  console.error("❌ ERRO: FIREBASE_KEY não configurada nas variáveis de ambiente!");
+  process.exit(1);
+}
+
+const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+}
+
+const db = admin.firestore();
+
 // ✅ /receive/Ticket
 app.post("/receive/Ticket", async (req, res) => {
   try {
