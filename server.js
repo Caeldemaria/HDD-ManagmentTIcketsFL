@@ -9,45 +9,15 @@ const port = process.env.PORT || 8080;
 
 // Middleware
 app.use(cors());
-app.use(bodyParser.json());
-
-// Inicializa Firebase usando variável de ambiente
-if (!process.env.FIREBASE_KEY) {
-  console.error("❌ ERRO: FIREBASE_KEY não configurada nas variáveis de ambiente!");
-  process.exit(1);
-}
-
-const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
-
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
-}
-
-const db = admin.firestore();
-
-// server.js
-import express from "express";
-import bodyParser from "body-parser";
-import cors from "cors";
-import admin from "firebase-admin";
-
-// Inicializa Express
-const app = express();
-const port = process.env.PORT || 8080;
-
-// Middleware
-app.use(cors());
 app.use(bodyParser.json({ limit: "10mb" }));
 
-// 🚨 Garantindo que FIREBASE_KEY exista
+// 🚨 Verifica Firebase Key
 if (!process.env.FIREBASE_KEY) {
   console.error("❌ ERRO: FIREBASE_KEY não foi configurada no Render!");
   process.exit(1);
 }
 
-// Carrega credencial Firebase
+// Credencial Firebase
 const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
 // Inicializa Firebase Admin
@@ -68,8 +38,9 @@ app.post("/receive/Ticket", async (req, res) => {
     const Ticket = payload.Ticket;
 
     if (!Ticket || !Ticket.TicketNumber) {
-      console.error("❌ Payload inválido:", payload);
-      return res.status(400).json({ message: "Formato inválido: Ticket ou TicketNumber ausente" });
+      return res.status(400).json({
+        message: "Formato inválido: Ticket ou TicketNumber ausente",
+      });
     }
 
     const id = Ticket.TicketNumber.toString().trim();
@@ -80,14 +51,13 @@ app.post("/receive/Ticket", async (req, res) => {
         OneCallCenterCode: payload.OneCallCenterCode || null,
         TransmissionDate: payload.TransmissionDate || null,
         receivedAt: new Date().toISOString(),
-        status: Ticket.Status || "Open"
+        status: Ticket.Status || "Open",
       },
       { merge: true }
     );
 
     console.log("📨 Ticket recebido:", id);
-    return res.status(200).json({ message: "Ticket salvo com sucesso" });
-
+    return res.json({ message: "Ticket salvo com sucesso" });
   } catch (error) {
     console.error("❌ Erro ao salvar Ticket:", error);
     return res.status(500).json({ message: "Erro interno", error: error.message });
@@ -114,8 +84,7 @@ app.post("/receive/Message", async (req, res) => {
     });
 
     console.log("📨 Message recebido");
-    return res.status(200).json({ message: "Message salvo com sucesso" });
-
+    return res.json({ message: "Message salvo com sucesso" });
   } catch (error) {
     console.error("❌ Erro ao salvar Message:", error);
     return res.status(500).json({ message: "Erro interno", error: error.message });
@@ -142,8 +111,7 @@ app.post("/receive/EODAudit", async (req, res) => {
     });
 
     console.log("📨 EODAudit recebido");
-    return res.status(200).json({ message: "EODAudit salvo com sucesso" });
-
+    return res.json({ message: "EODAudit salvo com sucesso" });
   } catch (error) {
     console.error("❌ Erro ao salvar EODAudit:", error);
     return res.status(500).json({ message: "Erro interno", error: error.message });
@@ -153,22 +121,19 @@ app.post("/receive/EODAudit", async (req, res) => {
 // ---------------------------------------------------------------------------
 // ✅ ENDPOINT /receive/Response
 // ---------------------------------------------------------------------------
-// FORMATO REAL DO 811:
-//
-// { "OneCallCenterCode": "...", "TransmissionDate": "...", "Response": { ... } }
-// ---------------------------------------------------------------------------
 app.post("/receive/Response", async (req, res) => {
   try {
     const payload = req.body;
     const ResponseObj = payload.Response;
 
     if (!ResponseObj || !ResponseObj.TicketNumber) {
-      return res.status(400).json({ message: "Formato inválido: Response ou TicketNumber ausente" });
+      return res.status(400).json({
+        message: "Formato inválido: Response ou TicketNumber ausente",
+      });
     }
 
     const ticketNumber = ResponseObj.TicketNumber.toString().trim();
 
-    // Salva como subcoleção dentro do ticket
     await db
       .collection("tickets")
       .doc(ticketNumber)
@@ -180,12 +145,10 @@ app.post("/receive/Response", async (req, res) => {
         receivedAt: new Date().toISOString(),
       });
 
-    console.log("📨 Response recebido para ticket:", ticketNumber);
+    console.log("📨 Response recebido:", ticketNumber);
 
-    // -----------------------------------------------------------------------
-    // 📌 LÓGICA AUTOMÁTICA PARA STATUS CLEAR
-    // -----------------------------------------------------------------------
-    const clearCodes = ["1", "4", "5"]; // Marked, Clear No Facilities, No Conflict
+    // ----- Lógica para CLEAR -----
+    const clearCodes = ["1", "4", "5"];
 
     const responsesSnap = await db
       .collection("tickets")
@@ -193,7 +156,7 @@ app.post("/receive/Response", async (req, res) => {
       .collection("responses")
       .get();
 
-    const allResponses = responsesSnap.docs.map((doc) => doc.data());
+    const allResponses = responsesSnap.docs.map((d) => d.data());
 
     const allUtilitiesCleared = allResponses.every((r) =>
       clearCodes.includes(r.ResponseCode)
@@ -205,11 +168,10 @@ app.post("/receive/Response", async (req, res) => {
         { merge: true }
       );
 
-      console.log(`✅ Ticket ${ticketNumber} atualizado para CLEAR`);
+      console.log(`✅ Ticket ${ticketNumber} marcado como CLEAR`);
     }
 
-    return res.status(200).json({ message: "Response salvo com sucesso" });
-
+    return res.json({ message: "Response salvo com sucesso" });
   } catch (error) {
     console.error("❌ Erro ao salvar Response:", error);
     return res.status(500).json({ message: "Erro interno", error: error.message });
@@ -217,7 +179,7 @@ app.post("/receive/Response", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// 🔎 Endpoint simples para teste
+// 🔎 Endpoint de teste
 // ---------------------------------------------------------------------------
 app.get("/tickets", async (req, res) => {
   const snap = await db.collection("tickets").get();
@@ -226,7 +188,7 @@ app.get("/tickets", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// 🚀 SERVIDOR ONLINE
+// 🚀 Inicia servidor
 // ---------------------------------------------------------------------------
 app.listen(port, () => {
   console.log(`🚀 Servidor rodando na porta ${port}`);
