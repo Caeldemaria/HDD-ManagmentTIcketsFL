@@ -11,16 +11,16 @@ const port = process.env.PORT || 8080;
 app.use(cors());
 app.use(bodyParser.json({ limit: "10mb" }));
 
-// 🚨 Verifica Firebase Key
+// 🚨 Check Firebase Key
 if (!process.env.FIREBASE_KEY) {
-  console.error("❌ ERRO: FIREBASE_KEY não foi configurada no Render!");
+  console.error("❌ ERROR: FIREBASE_KEY was not configured on Render!");
   process.exit(1);
 }
 
-// Credencial Firebase
+// Firebase Credential
 const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
-// Inicializa Firebase Admin
+// Initialize Firebase Admin
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
@@ -39,7 +39,7 @@ app.post("/receive/Ticket", async (req, res) => {
 
     if (!Ticket || !Ticket.TicketNumber) {
       return res.status(400).json({
-        message: "Formato inválido: Ticket ou TicketNumber ausente",
+        message: "Invalid format: missing Ticket or TicketNumber",
       });
     }
 
@@ -56,11 +56,11 @@ app.post("/receive/Ticket", async (req, res) => {
       { merge: true }
     );
 
-    console.log("📨 Ticket recebido:", id);
-    return res.json({ message: "Ticket salvo com sucesso" });
+    console.log("📨 Ticket received:", id);
+    return res.json({ message: "Ticket saved successfully" });
   } catch (error) {
-    console.error("❌ Erro ao salvar Ticket:", error);
-    return res.status(500).json({ message: "Erro interno", error: error.message });
+    console.error("❌ Error saving Ticket:", error);
+    return res.status(500).json({ message: "Internal error", error: error.message });
   }
 });
 
@@ -73,7 +73,7 @@ app.post("/receive/Message", async (req, res) => {
     const Message = payload.Message;
 
     if (!Message) {
-      return res.status(400).json({ message: "Formato inválido: faltando Message" });
+      return res.status(400).json({ message: "Invalid format: Message is missing" });
     }
 
     await db.collection("messages").add({
@@ -83,11 +83,11 @@ app.post("/receive/Message", async (req, res) => {
       receivedAt: new Date().toISOString(),
     });
 
-    console.log("📨 Message recebido");
-    return res.json({ message: "Message salvo com sucesso" });
+    console.log("📨 Message received");
+    return res.json({ message: "Message saved successfully" });
   } catch (error) {
-    console.error("❌ Erro ao salvar Message:", error);
-    return res.status(500).json({ message: "Erro interno", error: error.message });
+    console.error("❌ Error saving Message:", error);
+    return res.status(500).json({ message: "Internal error", error: error.message });
   }
 });
 
@@ -100,7 +100,7 @@ app.post("/receive/EODAudit", async (req, res) => {
     const EODAudit = payload.EODAudit;
 
     if (!EODAudit) {
-      return res.status(400).json({ message: "Formato inválido: faltando EODAudit" });
+      return res.status(400).json({ message: "Invalid format: EODAudit is missing" });
     }
 
     await db.collection("audits").add({
@@ -110,11 +110,11 @@ app.post("/receive/EODAudit", async (req, res) => {
       receivedAt: new Date().toISOString(),
     });
 
-    console.log("📨 EODAudit recebido");
-    return res.json({ message: "EODAudit salvo com sucesso" });
+    console.log("📨 EODAudit received");
+    return res.json({ message: "EODAudit saved successfully" });
   } catch (error) {
-    console.error("❌ Erro ao salvar EODAudit:", error);
-    return res.status(500).json({ message: "Erro interno", error: error.message });
+    console.error("❌ Error saving EODAudit:", error);
+    return res.status(500).json({ message: "Internal error", error: error.message });
   }
 });
 
@@ -128,7 +128,7 @@ app.post("/receive/Response", async (req, res) => {
 
     if (!ResponseObj || !ResponseObj.TicketNumber) {
       return res.status(400).json({
-        message: "Formato inválido: Response ou TicketNumber ausente",
+        message: "Invalid format: missing Response or TicketNumber",
       });
     }
 
@@ -145,9 +145,9 @@ app.post("/receive/Response", async (req, res) => {
         receivedAt: new Date().toISOString(),
       });
 
-    console.log("📨 Response recebido:", ticketNumber);
+    console.log("📨 Response received:", ticketNumber);
 
-    // ----- Lógica para CLEAR -----
+    // ----- CLEAR Logic -----
     const clearCodes = ["1", "4", "5"];
 
     const responsesSnap = await db
@@ -168,18 +168,18 @@ app.post("/receive/Response", async (req, res) => {
         { merge: true }
       );
 
-      console.log(`✅ Ticket ${ticketNumber} marcado como CLEAR`);
+      console.log(`✅ Ticket ${ticketNumber} marked as CLEAR`);
     }
 
-    return res.json({ message: "Response salvo com sucesso" });
+    return res.json({ message: "Response saved successfully" });
   } catch (error) {
-    console.error("❌ Erro ao salvar Response:", error);
-    return res.status(500).json({ message: "Erro interno", error: error.message });
+    console.error("❌ Error saving Response:", error);
+    return res.status(500).json({ message: "Internal error", error: error.message });
   }
 });
 
 // ---------------------------------------------------------------------------
-// 🔎 Endpoint de teste
+// 🔎 Test endpoint
 // ---------------------------------------------------------------------------
 app.get("/tickets", async (req, res) => {
   const snap = await db.collection("tickets").get();
@@ -188,8 +188,8 @@ app.get("/tickets", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// 🚀 Inicia servidor
+// 🚀 Start server
 // ---------------------------------------------------------------------------
 app.listen(port, () => {
-  console.log(`🚀 Servidor rodando na porta ${port}`);
+  console.log(`🚀 Server running on port ${port}`);
 });
