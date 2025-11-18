@@ -183,6 +183,26 @@ app.get("/tickets", async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// GET endpoints required by FL811 tester (return simple 200 OK)
+// ---------------------------------------------------------------------------
+app.get("/receive/Ticket", (req, res) => {
+  res.status(200).json({ message: "OK" });
+});
+
+app.get("/receive/Message", (req, res) => {
+  res.status(200).json({ message: "OK" });
+});
+
+app.get("/receive/EODAudit", (req, res) => {
+  res.status(200).json({ message: "OK" });
+});
+
+app.get("/receive/Response", (req, res) => {
+  res.status(200).json({ message: "OK" });
+});
+
+
 // ----------------------------------------------------------------------------
 // 🚀 Start server
 // ----------------------------------------------------------------------------
