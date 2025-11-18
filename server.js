@@ -4,23 +4,31 @@ import bodyParser from "body-parser";
 import cors from "cors";
 import admin from "firebase-admin";
 
+// ----------------------------------------------------------------------------
+// 🔧 Express Setup
+// ----------------------------------------------------------------------------
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Middleware
 app.use(cors());
-app.use(bodyParser.json({ limit: "10mb" }));
+app.use(bodyParser.json({ limit: "20mb" }));
 
-// 🚨 Check Firebase Key
+// ----------------------------------------------------------------------------
+// 🔥 Firebase Setup
+// ----------------------------------------------------------------------------
 if (!process.env.FIREBASE_KEY) {
-  console.error("❌ ERROR: FIREBASE_KEY was not configured on Render!");
+  console.error("❌ ERROR: FIREBASE_KEY is missing!");
   process.exit(1);
 }
 
-// Firebase Credential
-const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+let serviceAccount = null;
+try {
+  serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+} catch (err) {
+  console.error("❌ FIREBASE_KEY JSON is invalid!");
+  process.exit(1);
+}
 
-// Initialize Firebase Admin
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
@@ -29,167 +37,155 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
-// ---------------------------------------------------------------------------
-// ✅ ENDPOINT /receive/Ticket
-// ---------------------------------------------------------------------------
+const ok = (msg, data = {}) => ({ success: true, message: msg, ...data });
+const err = (msg, data = {}) => ({ success: false, message: msg, ...data });
+
+// ----------------------------------------------------------------------------
+// 📥 POST /receive/Ticket
+// ----------------------------------------------------------------------------
 app.post("/receive/Ticket", async (req, res) => {
   try {
-    const payload = req.body;
-    const Ticket = payload.Ticket;
+    const { Ticket, OneCallCenterCode, TransmissionDate } = req.body;
 
     if (!Ticket || !Ticket.TicketNumber) {
-      return res.status(400).json({
-        message: "Invalid format: missing Ticket or TicketNumber",
-      });
+      return res.status(400).json(err("Ticket or TicketNumber missing"));
     }
 
     const id = Ticket.TicketNumber.toString().trim();
 
-    await db.collection("tickets").doc(id).set(
-      {
-        ...Ticket,
-        OneCallCenterCode: payload.OneCallCenterCode || null,
-        TransmissionDate: payload.TransmissionDate || null,
-        receivedAt: new Date().toISOString(),
-        status: Ticket.Status || "Open",
-      },
-      { merge: true }
-    );
+    const ticketData = {
+      ...Ticket,
+      OneCallCenterCode: OneCallCenterCode || null,
+      TransmissionDate: TransmissionDate || null,
+      receivedAt: new Date().toISOString(),
+      status: Ticket.Status || "Open",
+    };
 
-    console.log("📨 Ticket received:", id);
-    return res.json({ message: "Ticket saved successfully" });
+    await db.collection("tickets").doc(id).set(ticketData, { merge: true });
+
+    console.log("📨 Ticket saved:", id);
+    return res.json(ok("Ticket saved", { id }));
   } catch (error) {
-    console.error("❌ Error saving Ticket:", error);
-    return res.status(500).json({ message: "Internal error", error: error.message });
+    console.error("❌ Ticket Error:", error);
+    return res.status(500).json(err("Internal error", { error: error.message }));
   }
 });
 
-// ---------------------------------------------------------------------------
-// ✅ ENDPOINT /receive/Message
-// ---------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// 📥 POST /receive/Message
+// ----------------------------------------------------------------------------
 app.post("/receive/Message", async (req, res) => {
   try {
-    const payload = req.body;
-    const Message = payload.Message;
+    const { Message, OneCallCenterCode, TransmissionDate } = req.body;
 
-    if (!Message) {
-      return res.status(400).json({ message: "Invalid format: Message is missing" });
-    }
+    if (!Message) return res.status(400).json(err("Message missing"));
 
     await db.collection("messages").add({
       ...Message,
-      OneCallCenterCode: payload.OneCallCenterCode || null,
-      TransmissionDate: payload.TransmissionDate || null,
+      OneCallCenterCode: OneCallCenterCode || null,
+      TransmissionDate: TransmissionDate || null,
       receivedAt: new Date().toISOString(),
     });
 
-    console.log("📨 Message received");
-    return res.json({ message: "Message saved successfully" });
+    console.log("📨 Message saved");
+    return res.json(ok("Message saved"));
   } catch (error) {
-    console.error("❌ Error saving Message:", error);
-    return res.status(500).json({ message: "Internal error", error: error.message });
+    console.error("❌ Message Error:", error);
+    return res.status(500).json(err("Internal error", { error: error.message }));
   }
 });
 
-// ---------------------------------------------------------------------------
-// ✅ ENDPOINT /receive/EODAudit
-// ---------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// 📥 POST /receive/EODAudit
+// ----------------------------------------------------------------------------
 app.post("/receive/EODAudit", async (req, res) => {
   try {
-    const payload = req.body;
-    const EODAudit = payload.EODAudit;
+    const { EODAudit, OneCallCenterCode, TransmissionDate } = req.body;
 
-    if (!EODAudit) {
-      return res.status(400).json({ message: "Invalid format: EODAudit is missing" });
-    }
+    if (!EODAudit) return res.status(400).json(err("EODAudit missing"));
 
     await db.collection("audits").add({
       ...EODAudit,
-      OneCallCenterCode: payload.OneCallCenterCode || null,
-      TransmissionDate: payload.TransmissionDate || null,
+      OneCallCenterCode: OneCallCenterCode || null,
+      TransmissionDate: TransmissionDate || null,
       receivedAt: new Date().toISOString(),
     });
 
-    console.log("📨 EODAudit received");
-    return res.json({ message: "EODAudit saved successfully" });
+    console.log("📨 EODAudit saved");
+    return res.json(ok("EODAudit saved"));
   } catch (error) {
-    console.error("❌ Error saving EODAudit:", error);
-    return res.status(500).json({ message: "Internal error", error: error.message });
+    console.error("❌ EODAudit Error:", error);
+    return res.status(500).json(err("Internal error", { error: error.message }));
   }
 });
 
-// ---------------------------------------------------------------------------
-// ✅ ENDPOINT /receive/Response
-// ---------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// 📥 POST /receive/Response
+// ----------------------------------------------------------------------------
 app.post("/receive/Response", async (req, res) => {
   try {
-    const payload = req.body;
-    const ResponseObj = payload.Response;
+    const { Response: ResponseObj, OneCallCenterCode, TransmissionDate } = req.body;
 
     if (!ResponseObj || !ResponseObj.TicketNumber) {
-      return res.status(400).json({
-        message: "Invalid format: missing Response or TicketNumber",
-      });
+      return res.status(400).json(err("Response or TicketNumber missing"));
     }
 
-    const ticketNumber = ResponseObj.TicketNumber.toString().trim();
+    const id = ResponseObj.TicketNumber.toString().trim();
 
-    await db
-      .collection("tickets")
-      .doc(ticketNumber)
-      .collection("responses")
-      .add({
-        ...ResponseObj,
-        OneCallCenterCode: payload.OneCallCenterCode || null,
-        TransmissionDate: payload.TransmissionDate || null,
-        receivedAt: new Date().toISOString(),
-      });
+    const responseData = {
+      ...ResponseObj,
+      OneCallCenterCode: OneCallCenterCode || null,
+      TransmissionDate: TransmissionDate || null,
+      receivedAt: new Date().toISOString(),
+    };
 
-    console.log("📨 Response received:", ticketNumber);
+    // 🔹 Save response
+    await db.collection("tickets").doc(id).collection("responses").add(responseData);
 
-    // ----- CLEAR Logic -----
-    const clearCodes = ["1", "4", "5"];
+    console.log("📨 Response saved:", id);
+
+    // ----------------------------------------------------------------------
+    // CHECK CLEAR
+    // ----------------------------------------------------------------------
+    const clearCodes = ["1", "4", "5"]; // Cliente confirmou estes códigos
 
     const responsesSnap = await db
       .collection("tickets")
-      .doc(ticketNumber)
+      .doc(id)
       .collection("responses")
       .get();
 
-    const allResponses = responsesSnap.docs.map((d) => d.data());
+    const all = responsesSnap.docs.map((d) => d.data());
+    const allClear = all.length > 0 && all.every((r) => clearCodes.includes(r.ResponseCode));
 
-    const allUtilitiesCleared = allResponses.every((r) =>
-      clearCodes.includes(r.ResponseCode)
-    );
-
-    if (allResponses.length > 0 && allUtilitiesCleared) {
-      await db.collection("tickets").doc(ticketNumber).set(
-        { status: "Clear" },
-        { merge: true }
-      );
-
-      console.log(`✅ Ticket ${ticketNumber} marked as CLEAR`);
+    if (allClear) {
+      await db.collection("tickets").doc(id).set({ status: "Clear" }, { merge: true });
+      console.log(`✅ Ticket ${id} marked as CLEAR`);
     }
 
-    return res.json({ message: "Response saved successfully" });
+    return res.json(ok("Response saved", { clear: allClear }));
   } catch (error) {
-    console.error("❌ Error saving Response:", error);
-    return res.status(500).json({ message: "Internal error", error: error.message });
+    console.error("❌ Response Error:", error);
+    return res.status(500).json(err("Internal error", { error: error.message }));
   }
 });
 
-// ---------------------------------------------------------------------------
-// 🔎 Test endpoint
-// ---------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+// 🔎 GET /tickets — Test endpoint
+// ----------------------------------------------------------------------------
 app.get("/tickets", async (req, res) => {
-  const snap = await db.collection("tickets").get();
-  const data = snap.docs.map((d) => d.data());
-  res.json(data);
+  try {
+    const snap = await db.collection("tickets").get();
+    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    res.json(ok("Tickets loaded", { total: list.length, data: list }));
+  } catch (error) {
+    res.status(500).json(err("Error loading tickets", { error: error.message }));
+  }
 });
 
-// ---------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
 // 🚀 Start server
-// ---------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
 });

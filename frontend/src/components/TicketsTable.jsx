@@ -57,28 +57,24 @@ const TicketsTable = () => {
         unsubResponsesList = [];
 
         // for each ticket, listen responses subcollection in realtime
-        baseTickets.forEach((ticket, idx) => {
-          const responsesRef = collection(db, "tickets", ticket.id, "responses");
-          const unsubResponses = onSnapshot(
-            responsesRef,
-            (resSnap) => {
-              const responsesData = resSnap.docs.map((r) => ({ id: r.id, ...r.data() }));
-              baseTickets[idx].Responses = responsesData;
-              // update tickets state with a fresh copy
-              setTickets((prev) => {
-                // keep ordering from baseTickets
-                return [...baseTickets];
-              });
-            },
-            (err) => {
-              console.error("Error listening responses for", ticket.id, err);
-            }
-          );
-          unsubResponsesList.push(unsubResponses);
-        });
+        setTickets(baseTickets); // primeira carga sem responses
 
-        // set base tickets (in case there are no responses or before responses load)
-        setTickets(baseTickets);
+baseTickets.forEach((ticket) => {
+  const responsesRef = collection(db, "tickets", ticket.id, "responses");
+
+  const unsubResponses = onSnapshot(responsesRef, (resSnap) => {
+    const responsesData = resSnap.docs.map((r) => ({ id: r.id, ...r.data() }));
+
+    setTickets(prev =>
+      prev.map(t =>
+        t.id === ticket.id ? { ...t, Responses: responsesData } : t
+      )
+    );
+  });
+
+  unsubResponsesList.push(unsubResponses);
+});
+
         setLoading(false);
       },
       (err) => {
