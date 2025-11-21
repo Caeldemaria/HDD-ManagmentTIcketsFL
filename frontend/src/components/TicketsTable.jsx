@@ -1,4 +1,6 @@
 // src/components/TicketsTable.jsx
+import { useNavigate } from "react-router-dom";
+
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
@@ -21,6 +23,7 @@ const DropdownIcon = ({ open }) => (
 const TicketsTable = () => {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
+const navigate = useNavigate();
 
   // modal responses
   const [selectedResponses, setSelectedResponses] = useState([]);
@@ -60,7 +63,7 @@ const TicketsTable = () => {
         setTickets(baseTickets); // primeira carga sem responses
 
 baseTickets.forEach((ticket) => {
-  const responsesRef = collection(db, "tickets", ticket.id, "responses");
+  const responsesRef = collection(db, "tickets", ticket.id, "response");
 
   const unsubResponses = onSnapshot(responsesRef, (resSnap) => {
     const responsesData = resSnap.docs.map((r) => ({ id: r.id, ...r.data() }));
@@ -178,8 +181,8 @@ baseTickets.forEach((ticket) => {
       const projectVal = t.Project ?? t.project ?? "";
       cols.Project.add(projectVal);
       const footageVal = t.Footage !== undefined ? t.Footage : (t.footage !== undefined ? t.footage : "");
-      cols.Footage.add(String(footageVal));
       cols.Date.add(t.Date ?? "");
+      cols.Footage.add(String(footageVal));
       cols.Address.add(t.Address ?? "");
     });
 
@@ -271,17 +274,28 @@ baseTickets.forEach((ticket) => {
   return (
     <div className="relative overflow-x-auto p-6">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-800">Received Tickets</h1>
-        <div className="flex gap-2 items-center">
-          <button
-            onClick={clearAll}
-            className="bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded text-sm"
-          >
-            Clear filters
-          </button>
-          <span className="text-sm text-gray-500">{filteredTickets.length} / {tickets.length} shown</span>
-        </div>
-      </div>
+  <h1 className="text-2xl font-bold text-gray-800">Received Tickets</h1>
+  <div className="flex gap-2 items-center">
+
+    <button
+      onClick={clearAll}
+      className="bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded text-sm"
+    >
+      Clear filters
+    </button>
+
+    {/* BOTÃO PARA O DASHBOARD - RESUMO */}
+    <button  
+      onClick={() => navigate("/resumo")} 
+      className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
+    >
+      Resumo
+    </button>
+
+    <span className="text-sm text-gray-500">{filteredTickets.length} / {tickets.length} shown</span>
+  </div>
+</div>
+
 
       {/* Table */}
       <div className="overflow-auto">
