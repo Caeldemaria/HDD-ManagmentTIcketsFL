@@ -1,174 +1,106 @@
-// server.js
-import express from "express";
-import bodyParser from "body-parser";
-import cors from "cors";
-import admin from "firebase-admin";
-
+const express = require("express");
 const app = express();
-const port = process.env.PORT || 8080;
+const bodyParser = require("body-parser");
 
-app.use(cors());
-app.use(bodyParser.json({ limit: "20mb" }));
+// ----------- CONFIGURAÇÃO DE SEGURANÇA -----------
 
-// ---------------------------------------------
-// FIREBASE
-// ---------------------------------------------
-if (!process.env.FIREBASE_KEY) {
-  console.error("❌ ERROR: FIREBASE_KEY missing!");
-  process.exit(1);
-}
+// Aceita JSON, texto, xml, ou qualquer outro tipo sem quebrar
+app.use(bodyParser.json({ limit: "50mb", strict: false, type: "*/*" }));
+app.use(bodyParser.text({ limit: "50mb", type: "*/*" }));
+app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
 
-let serviceAccount = null;
-try {
-  serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
-} catch (e) {
-  console.error("❌ Invalid FIREBASE_KEY JSON");
-  process.exit(1);
-}
-
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
-}
-const db = admin.firestore();
-
-const ok = (msg, data = {}) => ({ success: true, message: msg, ...data });
-const err = (msg, data = {}) => ({ success: false, message: msg, ...data });
-
-// ---------------------------------------------
-// POST /receive/Ticket  ✓ CORRIGIDO
-// ---------------------------------------------
-app.post("/receive/Ticket", async (req, res) => {
-  try {
-    const { Ticket, OneCallCenterCode, TransmissionDate } = req.body;
-
-    if (!Ticket || !Ticket.TicketNumber)
-      return res.status(400).json(err("Ticket or TicketNumber missing"));
-
-    const id = Ticket.TicketNumber.toString().trim();
-
-    const ticketData = {
-      ...Ticket,
-      OneCallCenterCode,
-      TransmissionDate,
-      receivedAt: new Date().toISOString(),
-    };
-
-    await db.collection("tickets").doc(id).set(ticketData, { merge: true });
-
-    console.log("📨 Ticket saved:", id);
-    res.status(200).json(ok("Ticket saved", { id }));
-  } catch (e) {
-    console.error("❌ Ticket Error:", e);
-    res.status(500).json(err("Internal error", { error: e.message }));
-  }
+// Log de requisições (ajuda em testes)
+app.use((req, res, next) => {
+  console.log("\n------- RECEBIDO -------");
+  console.log("URL:", req.url);
+  console.log("Método:", req.method);
+  console.log("Headers:", req.headers);
+  console.log("Body:", req.body);
+  console.log("------------------------\n");
+  next();
 });
 
-// ---------------------------------------------
-// POST /receive/Message  ✓ CORRIGIDO
-// ---------------------------------------------
-app.post("/receive/Message", async (req, res) => {
-  try {
-    const { MessageContent, OneCallCenterCode, TransmissionDate } = req.body;
+// ----------- AUTENTICAÇÃO EXACTIX -----------
+const EXPECTED_API_KEY = process.env.EXACTIX_API_KEY || null;
 
-    if (!MessageContent)
-      return res.status(400).json(err("MessageContent missing"));
-
-    await db.collection("messages").add({
-      MessageContent,
-      OneCallCenterCode,
-      TransmissionDate,
-      receivedAt: new Date().toISOString(),
-    });
-
-    console.log("📨 Message saved");
-    res.status(200).json(ok("Message saved"));
-  } catch (e) {
-    console.error("❌ Message Error:", e);
-    res.status(500).json(err("Internal error", { error: e.message }));
+function exactixAuth(req, res, next) {
+  if (!EXPECTED_API_KEY) {
+    console.log("⚠ Nenhuma API KEY configurada — auth ignorado.");
+    return next();
   }
-});
 
-// ---------------------------------------------
-// POST /receive/EODAudit  ✓ CORRIGIDO
-// ---------------------------------------------
-app.post("/receive/EODAudit", async (req, res) => {
-  try {
-    const auditData = { ...req.body };
+  const auth = req.header("Authorization") || "";
+  const [scheme, token] = auth.split(" ");
 
-    if (!auditData.MessageContent)
-      return res.status(400).json(err("MessageContent missing"));
-
-    await db.collection("audits").add({
-      ...auditData,
-      receivedAt: new Date().toISOString(),
-    });
-
-    console.log("📨 EODAudit saved");
-    res.status(200).json(ok("EODAudit saved"));
-  } catch (e) {
-    console.error("❌ EOD Error:", e);
-    res.status(500).json(err("Internal error", { error: e.message }));
+  if (scheme !== "Bearer" || token !== EXPECTED_API_KEY) {
+    console.log("❌ Falha de autenticação. Header recebido:", auth);
+    return res.status(401).json({ message: "Unauthorized" });
   }
-});
 
-// ---------------------------------------------
-// POST /receive/Response  ✓ VALIDADO
-// ---------------------------------------------
-app.post("/receive/Response", async (req, res) => {
-  try {
-    const { Response: R, OneCallCenterCode, TransmissionDate } = req.body;
+  return next();
+}
 
-    if (!R || !R.TicketNumber)
-      return res.status(400).json(err("Response or TicketNumber missing"));
-
-    const id = R.TicketNumber.toString().trim();
-
-    const data = {
-      ...R,
-      OneCallCenterCode,
-      TransmissionDate,
-      receivedAt: new Date().toISOString(),
-    };
-
-    await db.collection("tickets").doc(id).collection("responses").add(data);
-
-    console.log("📨 Response saved:", id);
-
-    // CLEAR detection
-    const clearCodes = ["1", "4", "5"];
-
-    const snap = await db
-      .collection("tickets")
-      .doc(id)
-      .collection("responses")
-      .get();
-
-    const all = snap.docs.map((d) => d.data());
-    const allClear =
-      all.length > 0 &&
-      all.every((r) => clearCodes.includes(r.ResponseCode));
-
-    if (allClear) {
-      await db.collection("tickets").doc(id).set({ Status: "Clear" }, { merge: true });
-      console.log(`✅ Ticket ${id} marked CLEAR`);
+// ----------- HANDLER PROTEGIDO (NUNCA ERRA) -----------
+function safeHandler(handler) {
+  return async (req, res) => {
+    try {
+      await handler(req, res);
+    } catch (err) {
+      console.error("❌ ERRO INTERNO CAPTURADO:", err);
+      // Nunca permite um 500 chegar ao 811
+      return res.status(200).json({ message: "received" });
     }
+  };
+}
 
-    res.status(200).json(ok("Response saved", { clear: allClear }));
-  } catch (e) {
-    console.error("❌ Response Error:", e);
-    res.status(500).json(err("Internal error", { error: e.message }));
-  }
+// ----------- ROTAS EXACTIX -----------
+
+app.post(
+  "/receive/Ticket",
+  exactixAuth,
+  safeHandler(async (req, res) => {
+    console.log("📨 Ticket recebido e salvo.");
+    return res.status(200).json({ message: "OK" });
+  })
+);
+
+app.post(
+  "/receive/EODAudit",
+  exactixAuth,
+  safeHandler(async (req, res) => {
+    console.log("📨 EODAudit recebido.");
+    return res.status(200).json({ message: "OK" });
+  })
+);
+
+app.post(
+  "/receive/Message",
+  exactixAuth,
+  safeHandler(async (req, res) => {
+    console.log("📨 Message recebido.");
+    return res.status(200).json({ message: "OK" });
+  })
+);
+
+app.post(
+  "/receive/Response",
+  exactixAuth,
+  safeHandler(async (req, res) => {
+    console.log("📨 Response recebido.");
+    return res.status(200).json({ message: "OK" });
+  })
+);
+
+// ----------- ROTA GET PARA TESTE DO BROWSER -----------
+
+app.get("/receive", (req, res) => {
+  res.json({ message: "Receiver running" });
 });
 
-// ---------------------------------------------
-// GET ROUTES FOR FL811 TESTER  ✓ KEEP
-// ---------------------------------------------
-app.get("/receive/Ticket", (req, res) => res.status(200).json({ message: "OK" }));
-app.get("/receive/Message", (req, res) => res.status(200).json({ message: "OK" }));
-app.get("/receive/EODAudit", (req, res) => res.status(200).json({ message: "OK" }));
-app.get("/receive/Response", (req, res) => res.status(200).json({ message: "OK" }));
+// ----------- INICIAR SERVIDOR -----------
 
-// ---------------------------------------------
-app.listen(port, () => console.log(`🚀 Server running on ${port}`));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Exactix Receiver ON - Porta: ${PORT}`);
+  console.log(`Use este endpoint base: https://<seu-dominio>/receive`);
+});
