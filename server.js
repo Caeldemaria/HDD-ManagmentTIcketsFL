@@ -6,37 +6,46 @@ const admin = require("firebase-admin");
 const app = express();
 
 // =======================
-//  FIREBASE INIT
+//  FIREBASE INIT (via ENV)
 // =======================
 //
-// Opção 1 (recomendada em produção):
-// - Defina a variável de ambiente GOOGLE_APPLICATION_CREDENTIALS
-//   apontando para o JSON de service account.
-//   Ex: GOOGLE_APPLICATION_CREDENTIALS=/caminho/serviceAccountKey.json
+// No Render (ou outro host), crie uma env:
+// FIREBASE_SERVICE_ACCOUNT_JSON = conteúdo COMPLETO do JSON de service account
 //
-// admin.initializeApp(); // se já tiver GOOGLE_APPLICATION_CREDENTIALS no ambiente
-//
-// Opção 2: carregar o JSON direto (apenas para testes locais):
-// const serviceAccount = require("./serviceAccountKey.json");
-//
-// admin.initializeApp({
-//   credential: admin.credential.cert(serviceAccount),
-// });
+// Exemplo: console do Firebase -> Service Accounts -> gerar chave -> copiar JSON todo
+// e colar na variável de ambiente.
+
+let db = null;
 
 if (!admin.apps.length) {
-  admin.initializeApp(); // usa a config padrão do ambiente
-}
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
-const db = admin.firestore();
+  if (!serviceAccountJson) {
+    console.error("❌ Variável FIREBASE_SERVICE_ACCOUNT_JSON não configurada!");
+  } else {
+    try {
+      const serviceAccount = JSON.parse(serviceAccountJson);
+
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+
+      db = admin.firestore();
+      console.log("✅ Firebase inicializado com sucesso.");
+    } catch (err) {
+      console.error("❌ Erro ao inicializar Firebase:", err && err.stack ? err.stack : err);
+    }
+  }
+} else {
+  db = admin.firestore();
+}
 
 // =======================
 //  BODY PARSER
 // =======================
 
-// Receber JSON (é o que o Exactix/FL811 envia)
+// Receber JSON (o Exactix/FL811 envia application/json)
 app.use(express.json({ limit: "50mb" }));
-
-// Se quiser aceitar form-urlencoded, pode manter também:
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // =======================
@@ -64,7 +73,7 @@ function safeHandler(handler) {
     try {
       await handler(req, res);
     } catch (err) {
-      console.error("❌ ERRO INTERNO:", err);
+      console.error("❌ ERRO INTERNO:", err && err.stack ? err.stack : err);
       return res.sendStatus(500);
     }
   };
@@ -74,11 +83,17 @@ function safeHandler(handler) {
 //  ROTA DE TESTE DO FIREBASE
 // =======================
 //
-// Use /test-firebase no navegador para validar se está salvando no Firestore.
+// Use /test-firebase no navegador/Insomnia para validar se está
+// salvando no Firestore.
 
 app.get(
   "/test-firebase",
   safeHandler(async (req, res) => {
+    if (!db) {
+      console.error("❌ Firestore não inicializado.");
+      return res.status(500).json({ error: "Firestore não inicializado" });
+    }
+
     const ref = await db.collection("test_receiver").add({
       msg: "Olá Firebase",
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -112,7 +127,7 @@ app.post(
 
     console.log("🧾 Payload Ticket:", JSON.stringify(payload, null, 2));
 
-    // Validação mínima (se atrapalhar, pode comentar):
+    // Validação mínima (se atrapalhar, pode comentar ou remover):
     if (!payload || payload.OneCallCenterCode !== "FL811") {
       console.warn(
         "⚠️ Ticket com OneCallCenterCode inválido:",
@@ -121,11 +136,16 @@ app.post(
       return res.sendStatus(400);
     }
 
+    if (!db) {
+      console.error("❌ Firestore não inicializado.");
+      return res.sendStatus(500);
+    }
+
     const ticket = payload.Ticket || {};
     const ticketNumber = ticket.TicketNumber || "unknown";
     const version = ticket.Version || 1;
 
-    // Id estável: ex: 12345678_v1
+    // Id estável: ex: 20241101001_v1
     const docId = `${ticketNumber}_v${version}`;
 
     await db
@@ -165,6 +185,11 @@ app.post(
 
     console.log("🧾 Payload EODAudit:", JSON.stringify(payload, null, 2));
 
+    if (!db) {
+      console.error("❌ Firestore não inicializado.");
+      return res.sendStatus(500);
+    }
+
     const ref = await db.collection("eod_audits").add({
       ...payload,
       receivedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -198,6 +223,11 @@ app.post(
 
     console.log("🧾 Payload Message:", JSON.stringify(payload, null, 2));
 
+    if (!db) {
+      console.error("❌ Firestore não inicializado.");
+      return res.sendStatus(500);
+    }
+
     const ref = await db.collection("messages").add({
       ...payload,
       receivedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -230,6 +260,11 @@ app.post(
     }
 
     console.log("🧾 Payload Response:", JSON.stringify(payload, null, 2));
+
+    if (!db) {
+      console.error("❌ Firestore não inicializado.");
+      return res.sendStatus(500);
+    }
 
     const response = payload.Response || {};
     const ticketNumber = response.TicketNumber || "unknown";
