@@ -1,14 +1,47 @@
+// index.js
+
 const express = require("express");
+const admin = require("firebase-admin");
+
 const app = express();
-const bodyParser = require("body-parser");
 
-// ----------- ACEITA JSON, XML, TEXTO -----------
+// =======================
+//  FIREBASE INIT
+// =======================
+//
+// Opção 1 (recomendada em produção):
+// - Defina a variável de ambiente GOOGLE_APPLICATION_CREDENTIALS
+//   apontando para o JSON de service account.
+//   Ex: GOOGLE_APPLICATION_CREDENTIALS=/caminho/serviceAccountKey.json
+//
+// admin.initializeApp(); // se já tiver GOOGLE_APPLICATION_CREDENTIALS no ambiente
+//
+// Opção 2: carregar o JSON direto (apenas para testes locais):
+// const serviceAccount = require("./serviceAccountKey.json");
+//
+// admin.initializeApp({
+//   credential: admin.credential.cert(serviceAccount),
+// });
 
-app.use(bodyParser.text({ type: "*/*", limit: "50mb" }));
-app.use(bodyParser.json({ type: "*/*", limit: "50mb", strict: false }));
-app.use(bodyParser.urlencoded({ extended: true, limit: "50mb" }));
+if (!admin.apps.length) {
+  admin.initializeApp(); // usa a config padrão do ambiente
+}
 
-// ----------- LOG COMPLETO -----------
+const db = admin.firestore();
+
+// =======================
+//  BODY PARSER
+// =======================
+
+// Receber JSON (é o que o Exactix/FL811 envia)
+app.use(express.json({ limit: "50mb" }));
+
+// Se quiser aceitar form-urlencoded, pode manter também:
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+// =======================
+//  LOG DE REQUISIÇÕES
+// =======================
 
 app.use((req, res, next) => {
   console.log("\n======= RECEBIDO =======");
@@ -19,7 +52,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// ----------- HANDLER SEM ERRO 500 -----------
+// =======================
+//  SAFE HANDLER
+// =======================
+//
+// Se der erro interno (Firebase, etc.), devolve 500 para
+// o Exactix reenviar mais tarde.
 
 function safeHandler(handler) {
   return async (req, res) => {
@@ -27,53 +65,198 @@ function safeHandler(handler) {
       await handler(req, res);
     } catch (err) {
       console.error("❌ ERRO INTERNO:", err);
-      // Sunshine 811 nunca pode receber erro 500
-      return res.status(200).json({ message: "OK" });
+      return res.sendStatus(500);
     }
   };
 }
 
-// ----------- ENDPOINTS EXACTIX (OFICIAIS) -----------
+// =======================
+//  ROTA DE TESTE DO FIREBASE
+// =======================
+//
+// Use /test-firebase no navegador para validar se está salvando no Firestore.
+
+app.get(
+  "/test-firebase",
+  safeHandler(async (req, res) => {
+    const ref = await db.collection("test_receiver").add({
+      msg: "Olá Firebase",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log("✅ Documento de teste criado:", ref.id);
+    return res.json({ ok: true, docId: ref.id });
+  })
+);
+
+// =======================
+//  ENDPOINT /receive/Ticket
+// =======================
 
 app.post(
   "/receive/Ticket",
   safeHandler(async (req, res) => {
     console.log("📨 Ticket recebido.");
-    return res.status(200).json({ message: "OK" });
+
+    let payload = req.body;
+
+    // Se por algum motivo vier como string, tenta converter:
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch (e) {
+        console.error("❌ Body Ticket não é JSON válido:", e);
+        return res.sendStatus(400);
+      }
+    }
+
+    console.log("🧾 Payload Ticket:", JSON.stringify(payload, null, 2));
+
+    // Validação mínima (se atrapalhar, pode comentar):
+    if (!payload || payload.OneCallCenterCode !== "FL811") {
+      console.warn(
+        "⚠️ Ticket com OneCallCenterCode inválido:",
+        payload && payload.OneCallCenterCode
+      );
+      return res.sendStatus(400);
+    }
+
+    const ticket = payload.Ticket || {};
+    const ticketNumber = ticket.TicketNumber || "unknown";
+    const version = ticket.Version || 1;
+
+    // Id estável: ex: 12345678_v1
+    const docId = `${ticketNumber}_v${version}`;
+
+    await db
+      .collection("tickets")
+      .doc(docId)
+      .set({
+        ...payload,
+        receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+    console.log("✅ Ticket salvo no Firestore com ID:", docId);
+
+    // Doc permite 200, 201, 202, 204. 200 está ok.
+    return res.sendStatus(200);
   })
 );
+
+// =======================
+//  ENDPOINT /receive/EODAudit
+// =======================
 
 app.post(
   "/receive/EODAudit",
   safeHandler(async (req, res) => {
     console.log("📨 EODAudit recebido.");
-    return res.status(200).json({ message: "OK" });
+
+    let payload = req.body;
+
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch (e) {
+        console.error("❌ Body EODAudit não é JSON válido:", e);
+        return res.sendStatus(400);
+      }
+    }
+
+    console.log("🧾 Payload EODAudit:", JSON.stringify(payload, null, 2));
+
+    const ref = await db.collection("eod_audits").add({
+      ...payload,
+      receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log("✅ EODAudit salvo no Firestore com ID:", ref.id);
+
+    return res.sendStatus(200);
   })
 );
+
+// =======================
+//  ENDPOINT /receive/Message
+// =======================
 
 app.post(
   "/receive/Message",
   safeHandler(async (req, res) => {
     console.log("📨 Message recebido.");
-    return res.status(200).json({ message: "OK" });
+
+    let payload = req.body;
+
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch (e) {
+        console.error("❌ Body Message não é JSON válido:", e);
+        return res.sendStatus(400);
+      }
+    }
+
+    console.log("🧾 Payload Message:", JSON.stringify(payload, null, 2));
+
+    const ref = await db.collection("messages").add({
+      ...payload,
+      receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log("✅ Message salva no Firestore com ID:", ref.id);
+
+    return res.sendStatus(200);
   })
 );
+
+// =======================
+//  ENDPOINT /receive/Response
+// =======================
 
 app.post(
   "/receive/Response",
   safeHandler(async (req, res) => {
     console.log("📨 Response recebido.");
-    return res.status(200).json({ message: "OK" });
+
+    let payload = req.body;
+
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch (e) {
+        console.error("❌ Body Response não é JSON válido:", e);
+        return res.sendStatus(400);
+      }
+    }
+
+    console.log("🧾 Payload Response:", JSON.stringify(payload, null, 2));
+
+    const response = payload.Response || {};
+    const ticketNumber = response.TicketNumber || "unknown";
+
+    const ref = await db.collection("responses").add({
+      ...payload,
+      ticketNumber,
+      receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log("✅ Response salva no Firestore com ID:", ref.id);
+
+    return res.sendStatus(200);
   })
 );
 
-// ----------- ROTAS DE TESTE -----------
+// =======================
+//  ROTAS DE STATUS / HEALTHCHECK
+// =======================
 
 app.get("/", (req, res) => res.json({ message: "Receiver online" }));
-app.get("/health", (req, res) => res.json({ status: "UP" }));
-app.get("/receive", (req, res) => res.json({ message: "Receiver running" }));
 
-// ----------- INICIAR SERVIDOR -----------
+app.get("/health", (req, res) => res.json({ status: "UP" }));
+
+// =======================
+//  START SERVER
+// =======================
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
