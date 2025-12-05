@@ -42,19 +42,44 @@ try {
 }
 
 // -------------------------------------------------------
-// 🧩 Helper: salvar log no Firestore
+// 🧩 Helper: salvar log no Firestore (sem derrubar a API)
 // -------------------------------------------------------
 async function saveLog(path, headers, body) {
   if (!firebaseInitialized || !db) {
-    throw new Error("Firestore não inicializado");
+    console.error("⚠️ Firestore não inicializado, não vou salvar:", path);
+    return; // não lança erro -> não gera 500
   }
 
-  await db.collection("sunshine_logs").add({
-    timestamp: new Date().toISOString(),
-    path,
-    headers,
-    body,
-  });
+  // Sanitiza o body: garante que só JSON puro vai pro Firestore
+  let safeBody = null;
+  try {
+    safeBody = JSON.parse(JSON.stringify(body));
+  } catch (err) {
+    console.error("⚠️ Erro ao serializar body, salvando como string:", err);
+    safeBody = { raw: String(body) };
+  }
+
+  // Também dá pra fazer isso com headers se quiser, mas normalmente já é simples
+  let safeHeaders = null;
+  try {
+    safeHeaders = JSON.parse(JSON.stringify(headers));
+  } catch (err) {
+    console.error("⚠️ Erro ao serializar headers, salvando como string:", err);
+    safeHeaders = { raw: String(headers) };
+  }
+
+  try {
+    await db.collection("sunshine_logs").add({
+      timestamp: new Date().toISOString(),
+      path,
+      headers: safeHeaders,
+      body: safeBody,
+    });
+    console.log("✅ Log salvo no Firestore (ou ignorado com segurança)");
+  } catch (err) {
+    console.error("⚠️ Falha ao salvar no Firestore:", err);
+    // NÃO relança o erro -> 811 continua recebendo 200
+  }
 }
 
 // -------------------------------------------------------
@@ -81,31 +106,25 @@ app.get("/test-firebase", async (req, res) => {
 });
 
 // -------------------------------------------------------
-// 📥 Handler genérico com tratamento de erro
+// 📥 Handler genérico (NUNCA devolve 500 para a 811)
 // -------------------------------------------------------
 async function genericHandler(path, req, res) {
   console.log(`📩 RECEBIDO ${path}`);
   console.log("Headers:", req.headers);
   console.log("Body:", req.body);
 
-  try {
-    await saveLog(path, req.headers, req.body);
-    console.log("✅ Dados salvos no Firestore");
-    // Sucesso: 200 sem body (conforme doc: no content is expected)
-    return res.sendStatus(200);
-  } catch (error) {
-    console.error(`❌ Erro ao processar ${path}:`, error);
-    // 500 -> faz o FL811 reenviar depois
-    return res.status(500).send({ error: "Internal server error" });
-  }
+  // Tenta salvar, mas qualquer erro fica só no log
+  await saveLog(path, req.headers, req.body);
+
+  // Sempre responde 200 pra 811 (no content is expected)
+  return res.sendStatus(200);
 }
 
 // -------------------------------------------------------
 // 📌 ENDPOINTS OFICIAIS FL811 (Receive API)
 // -------------------------------------------------------
 
-// Base URL cadastrada no FL811: https://seu-servidor.com/receive
-// Eles vão chamar: /Ticket, /EODAudit, /Message, /Response
+// Base URL cadastrada no FL811: https://hdd-managmentticketsfl.onrender.com/receive
 
 app.post("/receive/Ticket", async (req, res) => {
   await genericHandler("/receive/Ticket", req, res);
@@ -130,7 +149,7 @@ app.post("/receive", async (req, res) => {
   await genericHandler("/receive", req, res);
 });
 
-// Se quiser ainda aceitar algo como /receive/QualquerCoisa:
+// Ainda aceita /receive/QualquerCoisa:
 app.post("/receive/:type", async (req, res) => {
   const type = req.params.type;
   await genericHandler(`/receive/${type}`, req, res);
