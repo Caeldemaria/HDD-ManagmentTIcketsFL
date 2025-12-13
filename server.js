@@ -44,41 +44,56 @@ try {
 // -------------------------------------------------------
 // 🧩 Helper: salvar log no Firestore (sem derrubar a API)
 // -------------------------------------------------------
+function sanitizeForFirestore(obj) {
+  if (obj === undefined) return null;
+  if (obj === null) return null;
+
+  if (typeof obj !== "object") return obj;
+
+  if (Array.isArray(obj)) {
+    return obj
+      .map(sanitizeForFirestore)
+      .filter(v => v !== undefined);
+  }
+
+  const clean = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === undefined) continue;
+
+    const sanitized = sanitizeForFirestore(value);
+
+    // Firestore não gosta de objetos vazios
+    if (
+      sanitized !== undefined &&
+      !(typeof sanitized === "object" && Object.keys(sanitized).length === 0)
+    ) {
+      clean[key] = sanitized;
+    }
+  }
+
+  return clean;
+}
+
 async function saveLog(path, headers, body) {
   if (!firebaseInitialized || !db) {
     console.error("⚠️ Firestore não inicializado, não vou salvar:", path);
-    return; // não lança erro -> não gera 500
-  }
-
-  // Sanitiza o body: garante que só JSON puro vai pro Firestore
-  let safeBody = null;
-  try {
-    safeBody = JSON.parse(JSON.stringify(body));
-  } catch (err) {
-    console.error("⚠️ Erro ao serializar body, salvando como string:", err);
-    safeBody = { raw: String(body) };
-  }
-
-  // Também dá pra fazer isso com headers se quiser, mas normalmente já é simples
-  let safeHeaders = null;
-  try {
-    safeHeaders = JSON.parse(JSON.stringify(headers));
-  } catch (err) {
-    console.error("⚠️ Erro ao serializar headers, salvando como string:", err);
-    safeHeaders = { raw: String(headers) };
+    return;
   }
 
   try {
+    const cleanBody = sanitizeForFirestore(body);
+    const cleanHeaders = sanitizeForFirestore(headers);
+
     await db.collection("sunshine_logs").add({
-      timestamp: new Date().toISOString(),
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
       path,
-      headers: safeHeaders,
-      body: safeBody,
+      headers: cleanHeaders,
+      body: cleanBody,
     });
-    console.log("✅ Log salvo no Firestore (ou ignorado com segurança)");
+
+    console.log("✅ Log salvo no Firestore");
   } catch (err) {
-    console.error("⚠️ Falha ao salvar no Firestore:", err);
-    // NÃO relança o erro -> 811 continua recebendo 200
+    console.error("❌ Falha ao salvar no Firestore:", err.message);
   }
 }
 
