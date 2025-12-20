@@ -32,6 +32,10 @@ let db = null;
 function authWithRole(allowedRoles = []) {
   return async (req, res, next) => {
     try {
+      if (!db) {
+        return res.status(500).json({ error: "Database not initialized" });
+      }
+
       const apiKey = req.headers["x-api-key"];
 
       if (!apiKey) {
@@ -50,10 +54,7 @@ function authWithRole(allowedRoles = []) {
         return res.status(403).json({ error: "API key disabled" });
       }
 
-      if (
-        allowedRoles.length &&
-        !allowedRoles.includes(user.role)
-      ) {
+      if (allowedRoles.length && !allowedRoles.includes(user.role)) {
         return res.status(403).json({ error: "Forbidden" });
       }
 
@@ -69,6 +70,7 @@ function authWithRole(allowedRoles = []) {
     }
   };
 }
+
 
 
 try {
