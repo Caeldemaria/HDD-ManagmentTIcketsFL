@@ -26,7 +26,10 @@ let db = null;
 // -------------------------------------------------------
 // 🔐 AUTH API INTERNA (ROLE BASED)
 // -------------------------------------------------------
-async function authWithRole(allowedRoles = []) {
+// -------------------------------------------------------
+// 🔐 AUTH API INTERNA (ROLE BASED)
+// -------------------------------------------------------
+function authWithRole(allowedRoles = []) {
   return async (req, res, next) => {
     try {
       const apiKey = req.headers["x-api-key"];
