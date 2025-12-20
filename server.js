@@ -23,6 +23,51 @@ app.set("case sensitive routing", true);
 let firebaseInitialized = false;
 let db = null;
 
+// -------------------------------------------------------
+// 🔐 AUTH API INTERNA (ROLE BASED)
+// -------------------------------------------------------
+async function authWithRole(allowedRoles = []) {
+  return async (req, res, next) => {
+    try {
+      const apiKey = req.headers["x-api-key"];
+
+      if (!apiKey) {
+        return res.status(401).json({ error: "API key required" });
+      }
+
+      const snap = await db.collection("api_keys").doc(apiKey).get();
+
+      if (!snap.exists) {
+        return res.status(403).json({ error: "Invalid API key" });
+      }
+
+      const user = snap.data();
+
+      if (!user.active) {
+        return res.status(403).json({ error: "API key disabled" });
+      }
+
+      if (
+        allowedRoles.length &&
+        !allowedRoles.includes(user.role)
+      ) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      req.user = {
+        role: user.role,
+        name: user.name || "unknown",
+      };
+
+      next();
+    } catch (err) {
+      console.error("❌ Auth error:", err);
+      res.status(500).json({ error: "Auth failed" });
+    }
+  };
+}
+
+
 try {
   if (!process.env.FIREBASE_KEY) {
     console.error("❌ ERRO: FIREBASE_KEY não configurada!");
@@ -186,8 +231,91 @@ app.get("/receive/:type", (req, res) => {
 });
 
 // -------------------------------------------------------
+// 📊 API INTERNA (DASHBOARD / FRONTEND)
+// -------------------------------------------------------
+
+// 🔹 Listar logs/tickets (viewer + admin)
+app.get(
+  "/api/tickets",
+  authWithRole(["viewer", "admin"]),
+  async (req, res) => {
+    try {
+      const limit = Number(req.query.limit || 50);
+
+      const snap = await db
+        .collection("sunshine_logs")
+        .orderBy("timestamp", "desc")
+        .limit(limit)
+        .get();
+
+      const data = snap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      res.json({
+        user: req.user,
+        count: data.length,
+        data,
+      });
+    } catch (err) {
+      console.error("❌ /api/tickets error:", err);
+      res.status(500).json({ error: "Failed to load tickets" });
+    }
+  }
+);
+
+// 🔹 Buscar um log específico por ID
+app.get(
+  "/api/tickets/:id",
+  authWithRole(["viewer", "admin"]),
+  async (req, res) => {
+    try {
+      const doc = await db
+        .collection("sunshine_logs")
+        .doc(req.params.id)
+        .get();
+
+      if (!doc.exists) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      res.json({
+        id: doc.id,
+        ...doc.data(),
+      });
+    } catch (err) {
+      console.error("❌ /api/tickets/:id error:", err);
+      res.status(500).json({ error: "Failed to load ticket" });
+    }
+  }
+);
+
+// 🔴 Deletar log (ADMIN only)
+app.delete(
+  "/api/tickets/:id",
+  authWithRole(["admin"]),
+  async (req, res) => {
+    try {
+      await db
+        .collection("sunshine_logs")
+        .doc(req.params.id)
+        .delete();
+
+      res.sendStatus(204);
+    } catch (err) {
+      console.error("❌ DELETE /api/tickets error:", err);
+      res.status(500).json({ error: "Delete failed" });
+    }
+  }
+);
+
+
+
+// -------------------------------------------------------
 // 🚀 Start server
 // -------------------------------------------------------
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
 });
+
