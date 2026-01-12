@@ -1,4 +1,6 @@
-// server.js
+// -------------------------------------------------------
+// 🌐 SERVER SETUP
+// -------------------------------------------------------
 import express from "express";
 import cors from "cors";
 import admin from "firebase-admin";
@@ -7,19 +9,19 @@ const app = express();
 const port = process.env.PORT || 8080;
 
 // -------------------------------------------------------
-// 🔧 Config básica
+// 🔧 BASIC CONFIG
 // -------------------------------------------------------
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// Mantém compatibilidade com FL811
+// Compatibilidade FL811
 app.set("case sensitive routing", true);
 
 // -------------------------------------------------------
-// 🔥 Firebase Init
+// 🔥 FIREBASE INIT
 // -------------------------------------------------------
-let db = null;
+let db;
 
 try {
   if (!process.env.FIREBASE_KEY) {
@@ -33,13 +35,13 @@ try {
   });
 
   db = admin.firestore();
-  console.log("✅ Firebase conectado");
+  console.log("✅ Firebase connected");
 } catch (err) {
   console.error("❌ Firebase init error:", err.message);
 }
 
 // -------------------------------------------------------
-// 🔐 AUTH API INTERNA (ROLE + CLIENT)
+// 🔐 AUTH MIDDLEWARE (ROLE + CLIENT)
 // -------------------------------------------------------
 function authWithRole(allowedRoles = []) {
   return async (req, res, next) => {
@@ -76,38 +78,42 @@ function authWithRole(allowedRoles = []) {
       next();
     } catch (err) {
       console.error("❌ Auth error:", err);
-      res.status(500).json({ error: "Auth failed" });
+      res.status(500).json({ error: "Authentication failed" });
     }
   };
 }
 
 // -------------------------------------------------------
-// 🧼 Helper: sanitize para Firestore
+// 🧼 SANITIZE (Firestore Safe)
 // -------------------------------------------------------
-function sanitizeForFirestore(obj) {
-  if (obj === undefined || obj === null) return null;
-  if (typeof obj !== "object") return obj;
+function sanitizeForFirestore(value) {
+  if (value === undefined || value === null) return null;
 
-  if (Array.isArray(obj)) {
-    return obj.map(sanitizeForFirestore).filter(v => v !== null);
+  if (Array.isArray(value)) {
+    return value
+      .map(sanitizeForFirestore)
+      .filter(v => v !== null);
   }
 
-  const clean = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const sanitized = sanitizeForFirestore(value);
-    if (
-      sanitized !== null &&
-      !(typeof sanitized === "object" && Object.keys(sanitized).length === 0)
-    ) {
-      clean[key] = sanitized;
+  if (typeof value === "object") {
+    const clean = {};
+    for (const [k, v] of Object.entries(value)) {
+      const sanitized = sanitizeForFirestore(v);
+      if (
+        sanitized !== null &&
+        !(typeof sanitized === "object" && Object.keys(sanitized).length === 0)
+      ) {
+        clean[k] = sanitized;
+      }
     }
+    return clean;
   }
 
-  return clean;
+  return value;
 }
 
 // -------------------------------------------------------
-// 🧩 LOGS (AUDITORIA / DEBUG)
+// 🧩 LOGGING (AUDIT / DEBUG)
 // -------------------------------------------------------
 async function saveLog({ path, headers, body, clientId = "system" }) {
   try {
@@ -124,27 +130,24 @@ async function saveLog({ path, headers, body, clientId = "system" }) {
 }
 
 // -------------------------------------------------------
-// 🎟️ TICKETS 811 (DADOS REAIS)
+// 🎟️ TICKETS
 // -------------------------------------------------------
 async function saveOrUpdateTicket(ticket, clientId) {
   if (!ticket.TicketNumber) return;
 
-  await db
-    .collection("tickets")
-    .doc(ticket.TicketNumber)
-    .set(
-      {
-        ...ticket,
-        clientId,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+  await db.collection("tickets").doc(ticket.TicketNumber).set(
+    {
+      ...ticket,
+      clientId,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
 }
 
 // -------------------------------------------------------
-// 📥 HANDLER GENÉRICO FL811
-// ⚠️ NUNCA retorna erro para o FL811
+// 📥 FL811 GENERIC RECEIVER
+// ⚠️ NEVER RETURN ERROR TO FL811
 // -------------------------------------------------------
 async function receiveHandler(type, req, res) {
   await saveLog({
@@ -153,7 +156,6 @@ async function receiveHandler(type, req, res) {
     body: req.body,
   });
 
-  // Apenas Ticket vira dado estruturado
   if (type === "Ticket") {
     const ticket = {
       TicketNumber: req.body?.TicketNumber,
@@ -170,18 +172,19 @@ async function receiveHandler(type, req, res) {
 
   return res.sendStatus(200);
 }
+
 // -------------------------------------------------------
 // 🧪 ROOT
 // -------------------------------------------------------
 app.get("/", (req, res) => {
-  res.status(200).send({
+  res.status(200).json({
     message: "API Online",
     firebase: Boolean(db),
   });
 });
 
 // -------------------------------------------------------
-// 📌 ENDPOINTS OFICIAIS FL811 (SEM AUTH)
+// 📌 FL811 OFFICIAL ENDPOINTS (NO AUTH)
 // -------------------------------------------------------
 app.post("/receive/Ticket", (req, res) =>
   receiveHandler("Ticket", req, res)
@@ -199,22 +202,17 @@ app.post("/receive/Message", (req, res) =>
   receiveHandler("Message", req, res)
 );
 
-// Fallback (opcional, seguro)
+// Safe fallback
 app.post("/receive/:type", (req, res) =>
   receiveHandler(req.params.type, req, res)
 );
 
-// GETs defensivos
-app.get("/receive", (req, res) => {
-  res.status(200).send({ message: "Use POST" });
-});
-
-app.get("/receive/:type", (req, res) => {
-  res.status(200).send({ message: "Use POST" });
-});
+// Defensive GETs
+app.get("/receive", (_, res) => res.json({ message: "Use POST" }));
+app.get("/receive/:type", (_, res) => res.json({ message: "Use POST" }));
 
 // -------------------------------------------------------
-// 📊 API INTERNA — TICKETS
+// 📊 INTERNAL API — TICKETS
 // -------------------------------------------------------
 app.get(
   "/api/tickets",
@@ -224,6 +222,7 @@ app.get(
       const { role, clientId } = req.user;
 
       let query = db.collection("tickets");
+
       if (role === "client" && clientId) {
         query = query.where("clientId", "==", clientId);
       }
@@ -247,7 +246,7 @@ app.get(
 );
 
 // -------------------------------------------------------
-// 🔴 ADMIN DELETE
+// 🔴 ADMIN — DELETE TICKET
 // -------------------------------------------------------
 app.delete(
   "/api/tickets/:id",
