@@ -4,6 +4,8 @@
 import express from "express";
 import cors from "cors";
 import admin from "firebase-admin";
+import crypto from "crypto";
+
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -122,12 +124,13 @@ async function saveLog({ path, headers, body, clientId = "system" }) {
       path,
       clientId,
       headers: sanitizeForFirestore(headers),
-      body: sanitizeForFirestore(body),
+      rawBody: JSON.stringify(body), // 👈 SALVA TUDO
     });
   } catch (err) {
     console.error("❌ Log save error:", err.message);
   }
 }
+
 
 // -------------------------------------------------------
 // 🎟️ TICKETS
@@ -150,12 +153,28 @@ async function saveOrUpdateTicket(ticket, clientId) {
 // ⚠️ NEVER RETURN ERROR TO FL811
 // -------------------------------------------------------
 async function receiveHandler(type, req, res) {
+  // 🔹 LOG SEMPRE
   await saveLog({
     path: `/receive/${type}`,
     headers: req.headers,
     body: req.body,
   });
 
+  // 🔹 SALVA PAYLOAD COMPLETO (NUNCA QUEBRA)
+  try {
+    await db
+      .collection("tickets_raw")
+      .doc(req.body?.TicketNumber || crypto.randomUUID())
+      .set({
+        type,
+        receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+        payload: JSON.stringify(req.body),
+      });
+  } catch (err) {
+    console.error("❌ Error saving raw payload:", err.message);
+  }
+
+  // 🔹 DADOS ESTRUTURADOS (APENAS O QUE VOCÊ USA)
   if (type === "Ticket") {
     const ticket = {
       TicketNumber: req.body?.TicketNumber,
@@ -170,8 +189,10 @@ async function receiveHandler(type, req, res) {
     await saveOrUpdateTicket(ticket, "default_client");
   }
 
+  // ⚠️ FL811 SEMPRE PRECISA 200
   return res.sendStatus(200);
 }
+
 
 // -------------------------------------------------------
 // 🧪 ROOT
@@ -188,7 +209,7 @@ app.get("/", (req, res) => {
 // -------------------------------------------------------
 app.post("/receive/Ticket", (req, res) =>
   receiveHandler("Ticket", req, res)
-);
+);  
 
 app.post("/receive/Response", (req, res) =>
   receiveHandler("Response", req, res)
