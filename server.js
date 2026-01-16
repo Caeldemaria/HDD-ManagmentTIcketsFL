@@ -194,46 +194,79 @@ app.get("/receive/:type", (_, res) => res.json({ message: "Use POST" }));
 // -------------------------------------------------------
 // 📊 INTERNAL API — TICKETS
 // -------------------------------------------------------
+
+function authWithRole(allowedRoles = []) {
+  return async (req, res, next) => {
+    try {
+      if (!db) {
+        return res.status(500).json({ error: "Database not initialized" });
+      }
+
+      const apiKey = req.headers["x-api-key"];
+      if (!apiKey) {
+        return res.status(401).json({ error: "API key required" });
+      }
+
+      const snap = await db.collection("api_keys").doc(apiKey).get();
+      if (!snap.exists) {
+        return res.status(403).json({ error: "Invalid API key" });
+      }
+
+      const user = snap.data();
+      if (!user.active) {
+        return res.status(403).json({ error: "API key disabled" });
+      }
+
+      if (allowedRoles.length && !allowedRoles.includes(user.role)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      req.user = {
+        role: user.role,
+        name: user.name || "unknown",
+        clientId: user.clientId || null,
+      };
+
+      next();
+    } catch (err) {
+      console.error("❌ Auth error:", err);
+      res.status(500).json({ error: "Authentication failed" });
+    }
+  };
+}
+
 app.get(
   "/api/tickets",
   authWithRole(["client", "viewer", "admin"]),
   async (req, res) => {
     try {
       const snap = await db
-        .collection("sunshine_logs")
-        .orderBy("timestamp", "desc")
-        .limit(300)
+        .collection("tickets_raw")
+        .orderBy("receivedAt", "desc")
+        .limit(200)
         .get();
 
-      const tickets = [];
-
-      for (const doc of snap.docs) {
-        const data = doc.data();
-
-        if (!data.path?.includes("/receive/Ticket")) continue;
-
+      const tickets = snap.docs.map(d => {
         let payload = {};
         try {
-          payload = JSON.parse(data.rawBody || "{}");
+          payload = JSON.parse(d.data().payload || "{}");
         } catch {}
 
-        const t = payload.Ticket || payload;
+        const src = payload.Ticket || payload;
 
-        if (!t?.TicketNumber) continue;
+        return {
+          id: d.id,
+          TicketNumber: src?.TicketNumber,
+          Address: src?.Address || src?.Location?.Address,
+          County: src?.County,
+          Status: src?.Status,
+          ExpireDate: src?.ExpireDate,
+          Project: src?.Project,
+          Date: src?.Date,
+        };
+      });
 
-        tickets.push({
-          id: doc.id,
-          TicketNumber: t.TicketNumber,
-          Status: t.Status,
-          Project: t.Project,
-          ExpireDate: t.ExpireDate,
-          Address: t.Address,
-          County: t.County,
-          Date: t.Date,
-        });
-      }
-
-      res.json(tickets);
+      res.json(tickets.filter(t => t.TicketNumber));
     } catch (err) {
       console.error("❌ /api/tickets error:", err);
       res.status(500).json({ error: "Failed to load tickets" });
