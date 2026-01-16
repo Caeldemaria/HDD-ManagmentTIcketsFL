@@ -194,26 +194,53 @@ app.get("/receive/:type", (_, res) => res.json({ message: "Use POST" }));
 // -------------------------------------------------------
 // 📊 INTERNAL API — TICKETS
 // -------------------------------------------------------
-app.get("/api/tickets", async (req, res) => {
-  try {
-    let query = db.collection("tickets");
+app.get(
+  "/api/tickets",
+  authWithRole(["client", "viewer", "admin"]),
+  async (req, res) => {
+    try {
+      const snap = await db
+        .collection("sunshine_logs")
+        .orderBy("timestamp", "desc")
+        .limit(300)
+        .get();
 
-    const snap = await query
-      .orderBy("updatedAt", "desc")
-      .limit(100)
-      .get();
+      const tickets = [];
 
-    res.json(
-      snap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      }))
-    );
-  } catch (err) {
-    console.error("❌ /api/tickets error:", err);
-    res.status(500).json({ error: "Failed to load tickets" });
+      for (const doc of snap.docs) {
+        const data = doc.data();
+
+        if (!data.path?.includes("/receive/Ticket")) continue;
+
+        let payload = {};
+        try {
+          payload = JSON.parse(data.rawBody || "{}");
+        } catch {}
+
+        const t = payload.Ticket || payload;
+
+        if (!t?.TicketNumber) continue;
+
+        tickets.push({
+          id: doc.id,
+          TicketNumber: t.TicketNumber,
+          Status: t.Status,
+          Project: t.Project,
+          ExpireDate: t.ExpireDate,
+          Address: t.Address,
+          County: t.County,
+          Date: t.Date,
+        });
+      }
+
+      res.json(tickets);
+    } catch (err) {
+      console.error("❌ /api/tickets error:", err);
+      res.status(500).json({ error: "Failed to load tickets" });
+    }
   }
-});
+);
+
 
 
 // -------------------------------------------------------
