@@ -195,50 +195,9 @@ app.get("/receive/:type", (_, res) => res.json({ message: "Use POST" }));
 // 📊 INTERNAL API — TICKETS
 // -------------------------------------------------------
 
-function authWithRole(allowedRoles = []) {
-  return async (req, res, next) => {
-    try {
-      if (!db) {
-        return res.status(500).json({ error: "Database not initialized" });
-      }
 
-      const apiKey = req.headers["x-api-key"];
-      if (!apiKey) {
-        return res.status(401).json({ error: "API key required" });
-      }
+app.get("/api/tickets", async (req, res) => {
 
-      const snap = await db.collection("api_keys").doc(apiKey).get();
-      if (!snap.exists) {
-        return res.status(403).json({ error: "Invalid API key" });
-      }
-
-      const user = snap.data();
-      if (!user.active) {
-        return res.status(403).json({ error: "API key disabled" });
-      }
-
-      if (allowedRoles.length && !allowedRoles.includes(user.role)) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
-
-      req.user = {
-        role: user.role,
-        name: user.name || "unknown",
-        clientId: user.clientId || null,
-      };
-
-      next();
-    } catch (err) {
-      console.error("❌ Auth error:", err);
-      res.status(500).json({ error: "Authentication failed" });
-    }
-  };
-}
-
-app.get(
-  "/api/tickets",
-  authWithRole(["client", "viewer", "admin"]),
-  async (req, res) => {
     try {
       const snap = await db
         .collection("sunshine_logs")
