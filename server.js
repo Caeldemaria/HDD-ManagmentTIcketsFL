@@ -246,27 +246,29 @@ app.get(
         .limit(1000)
         .get();
 
-      const rows = snap.docs.map(d => {
+      const rows = snap.docs.map((d) => {
         const data = d.data();
 
         let payload = {};
         try {
           payload = JSON.parse(data.rawBody || "{}");
-        } catch {}
+        } catch (e) {}
 
         return {
-  id: payload.TicketNumber,
-  TicketNumber: payload.TicketNumber,
-  Address: payload.Address || payload.Location?.Address,
-  County: payload.County,
-  Status: payload.Status,
-  ExpireDate: payload.ExpireDate,
-  Date: payload.Date,
-  raw: payload,
-};
+          id: payload.TicketNumber,
+          type: data.path?.includes("Ticket") ? "Ticket" : "Response",
+          TicketNumber: payload.TicketNumber,
+          Address: payload.Address || payload.Location?.Address,
+          County: payload.County,
+          Status: payload.Status,
+          ExpireDate: payload.ExpireDate,
+          Date: payload.Date,
+          raw: payload,
+        };
+      });
 
-      const tickets = rows.filter(r => r.type === "Ticket");
-      const responses = rows.filter(r => r.type === "Response");
+      const tickets = rows.filter((r) => r.type === "Ticket");
+      const responses = rows.filter((r) => r.type === "Response");
 
       res.json({ tickets, responses });
     } catch (err) {
@@ -275,6 +277,7 @@ app.get(
     }
   }
 );
+
 
 
 
