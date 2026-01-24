@@ -235,44 +235,40 @@ function authWithRole(allowedRoles = []) {
   };
 }
 
-app.get(
-  "/api/tickets",
-  authWithRole(["client", "viewer", "admin"]),
-  async (req, res) => {
-    try {
-      const snap = await db
-        .collection("tickets_raw")
-        .orderBy("receivedAt", "desc")
-        .limit(200)
-        .get();
+app.get("/api/tickets", async (req, res) => {
+  try {
+    const snap = await db
+      .collection("tickets_raw")
+      .orderBy("receivedAt", "desc")
+      .limit(200)
+      .get();
 
-      const tickets = snap.docs.map(d => {
-        let payload = {};
-        try {
-          payload = JSON.parse(d.data().payload || "{}");
-        } catch {}
+    const tickets = snap.docs.map(d => {
+      let payload = {};
+      try {
+        payload = JSON.parse(d.data().payload || "{}");
+      } catch {}
 
-        const src = payload.Ticket || payload;
+      const src = payload.Ticket || payload;
 
-        return {
-          id: d.id,
-          TicketNumber: src?.TicketNumber,
-          Address: src?.Address || src?.Location?.Address,
-          County: src?.County,
-          Status: src?.Status,
-          ExpireDate: src?.ExpireDate,
-          Project: src?.Project,
-          Date: src?.Date,
-        };
-      });
+      return {
+        id: d.id,
+        TicketNumber: src?.TicketNumber,
+        Address: src?.Address || src?.Location?.Address,
+        County: src?.County,
+        Status: src?.Status,
+        ExpireDate: src?.ExpireDate,
+        Project: src?.Project,
+        Date: src?.Date,
+      };
+    });
 
-      res.json(tickets.filter(t => t.TicketNumber));
-    } catch (err) {
-      console.error("❌ /api/tickets error:", err);
-      res.status(500).json({ error: "Failed to load tickets" });
-    }
+    res.json(tickets.filter(t => t.TicketNumber));
+  } catch (err) {
+    console.error("❌ /api/tickets error:", err);
+    res.status(500).json({ error: "Failed to load tickets" });
   }
-);
+});
 
 
 
@@ -295,3 +291,4 @@ app.delete("/api/tickets/:id", async (req, res) => {
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
 });
+ESCOLA
