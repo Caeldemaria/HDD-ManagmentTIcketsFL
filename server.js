@@ -255,17 +255,15 @@ app.get(
         } catch {}
 
         return {
-          id: d.id,
-          type: data.path?.includes("Ticket") ? "Ticket" : "Response",
-          TicketNumber: payload.TicketNumber,
-          Address: payload.Address || payload.Location?.Address,
-          County: payload.County,
-          Status: payload.Status,
-          ExpireDate: payload.ExpireDate,
-          Date: payload.Date,
-          raw: payload,
-        };
-      });
+  id: payload.TicketNumber,
+  TicketNumber: payload.TicketNumber,
+  Address: payload.Address || payload.Location?.Address,
+  County: payload.County,
+  Status: payload.Status,
+  ExpireDate: payload.ExpireDate,
+  Date: payload.Date,
+  raw: payload,
+};
 
       const tickets = rows.filter(r => r.type === "Ticket");
       const responses = rows.filter(r => r.type === "Response");
