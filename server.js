@@ -235,40 +235,48 @@ function authWithRole(allowedRoles = []) {
   };
 }
 
-app.get("/api/tickets", async (req, res) => {
-  try {
-    const snap = await db
-      .collection("tickets_raw")
-      .orderBy("receivedAt", "desc")
-      .limit(200)
-      .get();
+app.get(
+  "/api/tickets",
+  authWithRole(["client", "viewer", "admin"]),
+  async (req, res) => {
+    try {
+      const snap = await db
+        .collection("sunshine_logs")
+        .orderBy("timestamp", "desc")
+        .limit(1000)
+        .get();
 
-    const tickets = snap.docs.map(d => {
-      let payload = {};
-      try {
-        payload = JSON.parse(d.data().payload || "{}");
-      } catch {}
+      const rows = snap.docs.map(d => {
+        const data = d.data();
 
-      const src = payload.Ticket || payload;
+        let payload = {};
+        try {
+          payload = JSON.parse(data.rawBody || "{}");
+        } catch {}
 
-      return {
-        id: d.id,
-        TicketNumber: src?.TicketNumber,
-        Address: src?.Address || src?.Location?.Address,
-        County: src?.County,
-        Status: src?.Status,
-        ExpireDate: src?.ExpireDate,
-        Project: src?.Project,
-        Date: src?.Date,
-      };
-    });
+        return {
+          id: d.id,
+          type: data.path?.includes("Ticket") ? "Ticket" : "Response",
+          TicketNumber: payload.TicketNumber,
+          Address: payload.Address || payload.Location?.Address,
+          County: payload.County,
+          Status: payload.Status,
+          ExpireDate: payload.ExpireDate,
+          Date: payload.Date,
+          raw: payload,
+        };
+      });
 
-    res.json(tickets.filter(t => t.TicketNumber));
-  } catch (err) {
-    console.error("❌ /api/tickets error:", err);
-    res.status(500).json({ error: "Failed to load tickets" });
+      const tickets = rows.filter(r => r.type === "Ticket");
+      const responses = rows.filter(r => r.type === "Response");
+
+      res.json({ tickets, responses });
+    } catch (err) {
+      console.error("❌ /api/tickets error:", err);
+      res.status(500).json({ error: "Failed to load tickets" });
+    }
   }
-});
+);
 
 
 
