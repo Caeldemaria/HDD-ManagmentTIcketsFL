@@ -201,45 +201,39 @@ app.get("/api/tickets", async (req, res) => {
     const snap = await db
       .collection("sunshine_logs")
       .orderBy("timestamp", "desc")
-      .limit(2000)
+      .limit(3000)
       .get();
 
-    const rows = snap.docs.map((d) => {
+    const map = new Map();
+
+    snap.docs.forEach((d) => {
       const data = d.data();
 
       let payload = {};
       try {
         payload = JSON.parse(data.rawBody || "{}");
-      } catch (e) {}
+      } catch (e) {
+        return;
+      }
 
-      return {
-        id: payload.TicketNumber,
-        type: data.path?.toLowerCase().includes("ticket") ? "Ticket" : "Other",
-        TicketNumber: payload.TicketNumber,
-        Address: payload.Address || payload.Location?.Address,
-        County: payload.County,
-        Status: payload.Status,
-        ExpireDate: payload.ExpireDate,
-        Date: payload.Date,
-        raw: payload,
-      };
-    });
+      if (!payload.TicketNumber) return;
 
-    const map = new Map();
-
-    rows.forEach((r) => {
-      if (!r.TicketNumber) return;
-      if (r.type !== "Ticket") return;
-
-      if (!map.has(r.TicketNumber)) {
-        map.set(r.TicketNumber, r);
+      if (!map.has(payload.TicketNumber)) {
+        map.set(payload.TicketNumber, {
+          id: payload.TicketNumber,
+          TicketNumber: payload.TicketNumber,
+          Status: payload.Status || "",
+          ExpireDate: payload.ExpireDate || "",
+          Date: payload.Date || "",
+          Address: payload.Address || payload.Location?.Address || "",
+          raw: payload,
+        });
       }
     });
 
     const tickets = Array.from(map.values());
 
-    console.log("TOTAL LOGS:", rows.length);
-    console.log("TOTAL TICKETS:", tickets.length);
+    console.log("✅ TOTAL TICKETS:", tickets.length);
 
     res.json({ tickets });
   } catch (err) {
@@ -247,6 +241,7 @@ app.get("/api/tickets", async (req, res) => {
     res.status(500).json({ error: "Failed to load tickets" });
   }
 });
+
 
 
 
