@@ -198,39 +198,45 @@ app.get("/receive/:type", (_, res) => res.json({ message: "Use POST" }));
 
 app.get("/api/tickets", async (req, res) => {
   try {
-    const snap = await db.collection("sunshine_logs").limit(50).get();
-
-    console.log("DOCS:", snap.size);
+    const snap = await db.collection("sunshine_logs").get();
 
     const tickets = [];
 
-    snap.docs.forEach((d, i) => {
+    snap.docs.forEach((d) => {
       const data = d.data();
-
-      console.log("---- DOC", i, "----");
-      console.log("FIELDS:", Object.keys(data));
-      console.log("RAW:", data.rawBody);
 
       let payload = {};
       try {
-        payload = JSON.parse(data.rawBody || "{}");
-      } catch (e) {
-        console.log("JSON ERROR");
+        payload =
+          typeof data.rawBody === "string"
+            ? JSON.parse(data.rawBody)
+            : data.rawBody || {};
+      } catch {
         return;
       }
 
-      console.log("PARSED:", payload);
+      let ticketNumber = null;
+      let status = "";
 
-      if (payload.TicketNumber) {
-        tickets.push({
-          TicketNumber: payload.TicketNumber,
-          Status: payload.Status || "",
-          raw: payload,
-        });
+      if (payload.Ticket?.TicketNumber) {
+        ticketNumber = payload.Ticket.TicketNumber;
+        status = payload.Ticket.Status || "";
       }
-    });
 
-    console.log("FOUND:", tickets.length);
+      if (payload.Response?.TicketNumber) {
+        ticketNumber = payload.Response.TicketNumber;
+        status = payload.Response.ResponseCode || "";
+      }
+
+      if (!ticketNumber) return;
+
+      tickets.push({
+        id: d.id,
+        TicketNumber: ticketNumber,
+        Status: status,
+        raw: payload,
+      });
+    });
 
     res.json({ tickets });
   } catch (err) {
@@ -238,6 +244,7 @@ app.get("/api/tickets", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 
 
