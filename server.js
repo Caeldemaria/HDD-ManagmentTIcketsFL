@@ -198,49 +198,47 @@ app.get("/receive/:type", (_, res) => res.json({ message: "Use POST" }));
 
 app.get("/api/tickets", async (req, res) => {
   try {
-    const snap = await db
-      .collection("sunshine_logs")
-      .orderBy("timestamp", "desc")
-      .limit(3000)
-      .get();
+    const snap = await db.collection("sunshine_logs").limit(50).get();
 
-    const map = new Map();
+    console.log("DOCS:", snap.size);
 
-    snap.docs.forEach((d) => {
+    const tickets = [];
+
+    snap.docs.forEach((d, i) => {
       const data = d.data();
+
+      console.log("---- DOC", i, "----");
+      console.log("FIELDS:", Object.keys(data));
+      console.log("RAW:", data.rawBody);
 
       let payload = {};
       try {
         payload = JSON.parse(data.rawBody || "{}");
       } catch (e) {
+        console.log("JSON ERROR");
         return;
       }
 
-      if (!payload.TicketNumber) return;
+      console.log("PARSED:", payload);
 
-      if (!map.has(payload.TicketNumber)) {
-        map.set(payload.TicketNumber, {
-          id: payload.TicketNumber,
+      if (payload.TicketNumber) {
+        tickets.push({
           TicketNumber: payload.TicketNumber,
           Status: payload.Status || "",
-          ExpireDate: payload.ExpireDate || "",
-          Date: payload.Date || "",
-          Address: payload.Address || payload.Location?.Address || "",
           raw: payload,
         });
       }
     });
 
-    const tickets = Array.from(map.values());
-
-    console.log("✅ TOTAL TICKETS:", tickets.length);
+    console.log("FOUND:", tickets.length);
 
     res.json({ tickets });
   } catch (err) {
-    console.error("❌ /api/tickets error:", err);
-    res.status(500).json({ error: "Failed to load tickets" });
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
+
 
 
 
