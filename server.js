@@ -197,51 +197,56 @@ app.get("/receive/:type", (_, res) => res.json({ message: "Use POST" }));
 
 
 app.get("/api/tickets", async (req, res) => {
-
-    try {
-      const snap = await db
-        .collection("sunshine_logs")
-        .orderBy("timestamp", "desc")
-        .get();
-
-      const rows = snap.docs.map((d) => {
-  const data = d.data();
-
-  let payload = {};
   try {
-    payload = JSON.parse(data.rawBody || "{}");
-  } catch (e) {}
+    const snap = await db
+      .collection("sunshine_logs")
+      .orderBy("timestamp", "desc")
+      .limit(2000)
+      .get();
 
-  return {
-    id: payload.TicketNumber,
-    type: data.path?.includes("Ticket") ? "Ticket" : "Other",
-    TicketNumber: payload.TicketNumber,
-    Address: payload.Address || payload.Location?.Address,
-    County: payload.County,
-    Status: payload.Status,
-    ExpireDate: payload.ExpireDate,
-    Date: payload.Date,
-    raw: payload,
-  };
-});
+    const rows = snap.docs.map((d) => {
+      const data = d.data();
 
-const map = new Map();
+      let payload = {};
+      try {
+        payload = JSON.parse(data.rawBody || "{}");
+      } catch (e) {}
 
-rows.forEach((r) => {
-  if (!r.TicketNumber) return;
-  if (r.type !== "Ticket") return;
+      return {
+        id: payload.TicketNumber,
+        type: data.path?.toLowerCase().includes("ticket") ? "Ticket" : "Other",
+        TicketNumber: payload.TicketNumber,
+        Address: payload.Address || payload.Location?.Address,
+        County: payload.County,
+        Status: payload.Status,
+        ExpireDate: payload.ExpireDate,
+        Date: payload.Date,
+        raw: payload,
+      };
+    });
 
-  if (!map.has(r.TicketNumber)) {
-    map.set(r.TicketNumber, r);
+    const map = new Map();
+
+    rows.forEach((r) => {
+      if (!r.TicketNumber) return;
+      if (r.type !== "Ticket") return;
+
+      if (!map.has(r.TicketNumber)) {
+        map.set(r.TicketNumber, r);
+      }
+    });
+
+    const tickets = Array.from(map.values());
+
+    console.log("TOTAL LOGS:", rows.length);
+    console.log("TOTAL TICKETS:", tickets.length);
+
+    res.json({ tickets });
+  } catch (err) {
+    console.error("❌ /api/tickets error:", err);
+    res.status(500).json({ error: "Failed to load tickets" });
   }
 });
-
-const tickets = Array.from(map.values());
-
-console.log("TOTAL LOGS:", rows.length);
-console.log("TOTAL TICKETS:", tickets.length);
-
-res.json({ tickets });
 
 
 
