@@ -238,14 +238,11 @@ rows.forEach((r) => {
 
 const tickets = Array.from(map.values());
 
+console.log("TOTAL LOGS:", rows.length);
+console.log("TOTAL TICKETS:", tickets.length);
+
 res.json({ tickets });
 
-    } catch (err) {
-      console.error("❌ /api/tickets error:", err);
-      res.status(500).json({ error: "Failed to load tickets" });
-    }
-  }
-);
 
 
 
